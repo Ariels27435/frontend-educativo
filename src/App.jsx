@@ -1,202 +1,263 @@
 import React, { useState, useEffect } from 'react';
-import { getActividades, registrarProgreso, getProgresos } from './api';
-import confetti from 'canvas-confetti';
+import './App.css';
 
-export default function App() {
+const API_URL = 'https://backend-educativo.onrender.com/api';
+
+function App() {
   const [actividades, setActividades] = useState([]);
+  const [actividadSeleccionada, setActividadSeleccionada] = useState(null);
   const [progresos, setProgresos] = useState([]);
-  const [actividadActual, setActividadActual] = useState(null);
-  const [estudiante, setEstudiante] = useState('');
+  
+  
+  const [nombre, setNombre] = useState('');
+  const [edad, setEdad] = useState('');
   const [respuesta, setRespuesta] = useState('');
-  const [mensaje, setMensaje] = useState(null);
-  const [vista, setVista] = useState('juego');
+  const [mensaje, setMensaje] = useState('');
+  const [vistaActual, setVistaActual] = useState('juegos'); 
 
+ 
+  const [filtroEstudiante, setFiltroEstudiante] = useState('');
+
+  
   useEffect(() => {
-    cargarActividades();
+    fetchActividades();
+    fetchProgresos();
   }, []);
 
-  const cargarActividades = async () => {
+  const fetchActividades = async () => {
     try {
-      const data = await getActividades();
+      const res = await fetch(`${API_URL}/actividades`);
+      const data = await res.json();
       setActividades(data);
-      if (data && data.length > 0) setActividadActual(data[0]);
+      if (data.length > 0) setActividadSeleccionada(data[0]);
     } catch (err) {
-      console.error("Error al cargar actividades:", err);
+      console.error('Error al obtener actividades:', err);
     }
   };
 
-  const cargarProgresos = async () => {
+  const fetchProgresos = async (estudianteId = '') => {
     try {
-      const data = await getProgresos();
+      const url = estudianteId 
+        ? `${API_URL}/progresos?id_estudiante=${estudianteId}`
+        : `${API_URL}/progresos`;
+      const res = await fetch(url);
+      const data = await res.json();
       setProgresos(data);
     } catch (err) {
-      console.error("Error al cargar progresos:", err);
+      console.error('Error al obtener progresos:', err);
     }
   };
 
-  const cambiarVista = (nuevaVista) => {
-    setVista(nuevaVista);
-    if (nuevaVista === 'reporte') cargarProgresos();
-  };
-
-  const manejarEnvio = async (e) => {
+  
+  const handleSubmitRespuesta = async (e) => {
     e.preventDefault();
-    if (!estudiante.trim() || !respuesta.trim() || !actividadActual) return;
-
-    const esCorrecto = Math.random() > 0.3;
-    const puntaje = esCorrecto ? 100 : 50;
-
-    if (esCorrecto) {
-      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-      setMensaje({ tipo: 'exito', texto: '¡Excelente trabajo! Respuesta correcta 🎉' });
-    } else {
-      setMensaje({ tipo: 'error', texto: '¡Casi! Inténtalo de nuevo 💪' });
+    if (!nombre.trim() || !edad || !respuesta.trim()) {
+      setMensaje('⚠️ Por favor completa tu nombre, edad y respuesta.');
+      return;
     }
+
+    
+    const esCorrecto = respuesta.trim().length > 0;
+    const puntajeObtenido = esCorrecto ? 100 : 0;
 
     try {
-      await registrarProgreso({
-        id_estudiante: 1,
-        id_actividad: actividadActual.id_actividad,
-        completado: esCorrecto ? 1 : 0,
-        puntaje: puntaje
-      });
+      
+      let estudianteId = 1; 
+      try {
+        const resEstudiante = await fetch(`${API_URL}/estudiantes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nombre: nombre.trim(),
+            edad: parseInt(edad),
+            nivel: actividadSeleccionada?.nivel || 'Pri'
+          })
+        });
+        if (resEstudiante.ok) {
+          const dataEst = await resEstudiante.json();
+          estudianteId = dataEst.id_estudiante;
+        }
+      } catch (err) {
+        console.warn('Usando estudiante por defecto (ID 1)');
+      }
 
       
-      cargarProgresos();
-    } catch (err) {
-      console.error("Error al guardar progreso:", err);
-    }
+      const resProgreso = await fetch(`${API_URL}/progresos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id_estudiante: estudianteId,
+          id_actividad: actividadSeleccionada.id_actividad,
+          puntaje: puntajeObtenido,
+          completado: true
+        })
+      });
 
-    setRespuesta('');
+      if (resProgreso.ok) {
+        setMensaje('🎉 ¡Excelente trabajo! Respuesta registrada con éxito.');
+        setRespuesta('');
+        fetchProgresos(); 
+      } else {
+        setMensaje('❌ Error al guardar el progreso.');
+      }
+    } catch (err) {
+      console.error(err);
+      setMensaje('❌ Error de conexión con el servidor.');
+    }
   };
 
+  
+  const progresosFiltrados = progresos.filter((p) => {
+    if (!filtroEstudiante) return true;
+    const busqueda = filtroEstudiante.toLowerCase();
+    return (
+      (p.estudiante && p.estudiante.toLowerCase().includes(busqueda)) ||
+      (p.id_estudiante && p.id_estudiante.toString() === busqueda)
+    );
+  });
+
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <h1>📚 Plataforma Educativa Infantil</h1>
-        <nav style={styles.nav}>
+    <div className="container" style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+        <h1>🎮 Plataforma Educativa Infantil</h1>
+        <div>
           <button 
-            style={{...styles.navBtn, backgroundColor: vista === 'juego' ? '#4f46e5' : '#6b7280'}} 
-            onClick={() => cambiarVista('juego')}
-          >
-            🎮 Zona de Juegos
+            onClick={() => setVistaActual('juegos')} 
+            style={{ padding: '10px 20px', marginRight: '10px', cursor: 'pointer', backgroundColor: vistaActual === 'juegos' ? '#4F46E5' : '#E5E7EB', color: vistaActual === 'juegos' ? '#fff' : '#000', border: 'none', borderRadius: '5px' }}>
+            Zone de Juegos
           </button>
           <button 
-            style={{...styles.navBtn, backgroundColor: vista === 'reporte' ? '#4f46e5' : '#6b7280'}} 
-            onClick={() => cambiarVista('reporte')}
-          >
-            📊 Reporte Docente
+            onClick={() => setVistaActual('reporte')} 
+            style={{ padding: '10px 20px', cursor: 'pointer', backgroundColor: vistaActual === 'reporte' ? '#4F46E5' : '#E5E7EB', color: vistaActual === 'reporte' ? '#fff' : '#000', border: 'none', borderRadius: '5px' }}>
+             Reporte Docente
           </button>
-        </nav>
+        </div>
       </header>
 
-      {vista === 'juego' ? (
-        <main style={styles.main}>
-          <div style={styles.card}>
-            <h2>Selecciona una Actividad</h2>
-            <div style={styles.grid}>
-              {actividades.map((act) => (
-                <button
-                  key={act.id_actividad}
-                  style={{
-                    ...styles.actividadCard,
-                    borderColor: actividadActual?.id_actividad === act.id_actividad ? '#4f46e5' : '#e5e7eb'
-                  }}
-                  onClick={() => { setActividadActual(act); setMensaje(null); }}
-                >
-                  <span style={styles.badge}>{act.nivel}</span>
-                  <h3>{act.titulo}</h3>
-                  <p>{act.categoria}</p>
-                </button>
-              ))}
-            </div>
+      {vistaActual === 'juegos' ? (
+        <main>
+          <h2>Selecciona una Actividad</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '15px', marginBottom: '30px' }}>
+            {actividades.map((act) => (
+              <div 
+                key={act.id_actividad}
+                onClick={() => { setActividadSeleccionada(act); setMensaje(''); }}
+                style={{
+                  border: actividadSeleccionada?.id_actividad === act.id_actividad ? '3px solid #4F46E5' : '1px solid #E5E7EB',
+                  padding: '15px',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  backgroundColor: '#fff',
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
+                }}>
+                <span style={{ fontSize: '12px', background: '#EEF2FF', color: '#4F46E5', padding: '3px 8px', borderRadius: '12px' }}>
+                  {act.nivel}
+                </span>
+                <h3 style={{ margin: '10px 0 5px' }}>{act.titulo}</h3>
+                <p style={{ color: '#6B7280', margin: 0, fontSize: '14px' }}>{act.categoria}</p>
+              </div>
+            ))}
           </div>
 
-          {actividadActual && (
-            <div style={styles.card}>
-              <h2>Actividad: {actividadActual.titulo}</h2>
-              <form onSubmit={manejarEnvio} style={styles.form}>
-                <input
-                  type="text"
-                  placeholder="Tu Nombre"
-                  value={estudiante}
-                  onChange={(e) => setEstudiante(e.target.value)}
-                  style={styles.input}
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="Escribe tu respuesta aquí"
-                  value={respuesta}
-                  onChange={(e) => setRespuesta(e.target.value)}
-                  style={styles.input}
-                  required
-                />
-                <button type="submit" style={styles.submitBtn}>
+          {actividadSeleccionada && (
+            <div style={{ background: '#F9FAFB', padding: '25px', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
+              <h2>Actividad: {actividadSeleccionada.titulo}</h2>
+              <form onSubmit={handleSubmitRespuesta}>
+                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
+                  <input
+                    type="text"
+                    placeholder="Tu Nombre (Ej. Juan)"
+                    value={nombre}
+                    onChange={(e) => setNombre(e.target.value)}
+                    style={{ flex: 2, padding: '10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Edad (Ej. 7)"
+                    value={edad}
+                    onChange={(e) => setEdad(e.target.value)}
+                    style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '15px' }}>
+                  <input
+                    type="text"
+                    placeholder="Escribe tu respuesta aquí..."
+                    value={respuesta}
+                    onChange={(e) => setRespuesta(e.target.value)}
+                    style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #D1D5DB', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <button 
+                  type="submit" 
+                  style={{ width: '100%', padding: '12px', backgroundColor: '#10B981', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
                   Enviar Respuesta
                 </button>
               </form>
-
-              {mensaje && (
-                <div style={{
-                  ...styles.alert,
-                  backgroundColor: mensaje.tipo === 'exito' ? '#dcfce7' : '#fee2e2',
-                  color: mensaje.tipo === 'exito' ? '#15803d' : '#b91c1c'
-                }}>
-                  {mensaje.texto}
-                </div>
-              )}
+              {mensaje && <p style={{ marginTop: '15px', fontWeight: 'bold' }}>{mensaje}</p>}
             </div>
           )}
         </main>
       ) : (
-        <main style={styles.main}>
-          <div style={styles.card}>
-            <h2>📊 Reporte de Progresos (Docentes)</h2>
-            <table style={styles.table}>
-              <thead>
-                <tr>
-                  <th>ID Progreso</th>
-                  <th>ID Estudiante</th>
-                  <th>ID Actividad</th>
-                  <th>Completado</th>
-                  <th>Puntaje</th>
-                  <th>Fecha</th>
-                </tr>
-              </thead>
-              <tbody>
-                {progresos.map((p) => (
-                  <tr key={p.id_progreso}>
-                    <td>{p.id_progreso}</td>
-                    <td>{p.id_estudiante}</td>
-                    <td>{p.id_actividad}</td>
-                    <td>{p.completado ? '✅ Sí' : '❌ No'}</td>
-                    <td>{p.puntaje} pts</td>
-                    <td>{new Date(p.fecha_completado).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <section>
+          <h2> Reporte de Progresos (Docentes)</h2>
+          
+          {/* RF-08: Filtrado de Reportes */}
+          <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <label htmlFor="filtro" style={{ fontWeight: 'bold' }}>Filtrar por Estudiante (ID o Nombre):</label>
+            <input
+              id="filtro"
+              type="text"
+              placeholder="Ej. Juan o ID 1..."
+              value={filtroEstudiante}
+              onChange={(e) => setFiltroEstudiante(e.target.value)}
+              style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #D1D5DB', width: '250px' }}
+            />
+            {filtroEstudiante && (
+              <button 
+                onClick={() => setFiltroEstudiante('')}
+                style={{ padding: '8px 12px', backgroundColor: '#EF4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                Limpiar Filtro
+              </button>
+            )}
           </div>
-        </main>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#F3F4F6', textAlign: 'left', borderBottom: '2px solid #E5E7EB' }}>
+                <th style={{ padding: '12px' }}>ID Progreso</th>
+                <th style={{ padding: '12px' }}>Estudiante</th>
+                <th style={{ padding: '12px' }}>Actividad</th>
+                <th style={{ padding: '12px' }}>Puntaje</th>
+                <th style={{ padding: '12px' }}>Fecha</th>
+              </tr>
+            </thead>
+            <tbody>
+              {progresosFiltrados.length > 0 ? (
+                progresosFiltrados.map((p) => (
+                  <tr key={p.id_progreso} style={{ borderBottom: '1px solid #E5E7EB' }}>
+                    <td style={{ padding: '12px' }}>{p.id_progreso}</td>
+                    <td style={{ padding: '12px' }}>{p.estudiante || `Estudiante #${p.id_estudiante}`}</td>
+                    <td style={{ padding: '12px' }}>{p.actividad || `Actividad #${p.id_actividad}`}</td>
+                    <td style={{ padding: '12px' }}>{p.puntuacion || p.puntaje || 0} pts</td>
+                    <td style={{ padding: '12px' }}>
+                      {p.fecha_completado ? new Date(p.fecha_completado).toLocaleDateString() : 'Reciente'}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5" style={{ padding: '20px', textAlign: 'center', color: '#6B7280' }}>
+                    No se encontraron registros de progreso.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
       )}
     </div>
   );
 }
 
-const styles = {
-  container: { fontFamily: 'system-ui, sans-serif', padding: '20px', maxWidth: '1000px', margin: '0 auto' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '2px solid #e5e7eb', paddingBottom: '10px' },
-  nav: { display: 'flex', gap: '10px' },
-  navBtn: { padding: '10px 16px', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
-  main: { display: 'flex', flexDirection: 'column', gap: '20px' },
-  card: { padding: '20px', backgroundColor: '#fff', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginTop: '10px' },
-  actividadCard: { padding: '15px', borderRadius: '8px', border: '2px solid #e5e7eb', backgroundColor: '#f9fafb', cursor: 'pointer', textAlign: 'left' },
-  badge: { fontSize: '11px', backgroundColor: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' },
-  form: { display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '15px' },
-  input: { padding: '10px', borderRadius: '6px', border: '1px solid #ccc', fontSize: '16px' },
-  submitBtn: { padding: '12px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' },
-  alert: { marginTop: '15px', padding: '12px', borderRadius: '6px', fontWeight: 'bold', textAlign: 'center' },
-  table: { width: '100%', borderCollapse: 'collapse', marginTop: '15px' }
-};
+export default App;
