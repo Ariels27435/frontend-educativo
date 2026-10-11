@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getActividades, registrarProgreso, getProgresos } from './api';
 import confetti from 'canvas-confetti';
-import { BookOpen, Award, CheckCircle, RefreshCw, BarChart2 } from 'lucide-react';
 
 export default function App() {
   const [actividades, setActividades] = useState([]);
@@ -20,7 +19,7 @@ export default function App() {
     try {
       const data = await getActividades();
       setActividades(data);
-      if (data.length > 0) setActividadActual(data[0]);
+      if (data && data.length > 0) setActividadActual(data[0]);
     } catch (err) {
       console.error("Error al cargar actividades:", err);
     }
@@ -42,7 +41,7 @@ export default function App() {
 
   const manejarEnvio = async (e) => {
     e.preventDefault();
-    if (!estudiante.trim() || !respuesta.trim()) return;
+    if (!estudiante.trim() || !respuesta.trim() || !actividadActual) return;
 
     const esCorrecto = Math.random() > 0.3;
     const puntaje = esCorrecto ? 100 : 50;
@@ -61,6 +60,9 @@ export default function App() {
         completado: esCorrecto ? 1 : 0,
         puntaje: puntaje
       });
+
+      
+      cargarProgresos();
     } catch (err) {
       console.error("Error al guardar progreso:", err);
     }
